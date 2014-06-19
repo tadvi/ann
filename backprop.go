@@ -18,29 +18,32 @@ func sigmoid(x float64) float64 {
 	return 1 / (1 + math.Exp(-x))
 }
 
+// BNode node for backpropagation training based network
 type BNode struct {
+	Thr     float64 // threshold
+	Weights []float64
+
 	activ   float64 // activation value
-	thr     float64 // threshold
-	weights []float64
 	error   float64
 }
 
 // NewBNode creates new backpropagation network node.
 func NewBNode(wCount int) *BNode {
 	return &BNode{
-		weights: make([]float64, wCount, wCount),
+		Weights: make([]float64, wCount, wCount),
 	}
 }
 
-// Backprop main backpropagation network struct.
+// Backprop main backpropagation network.
+// Public members can be persisted to json or database.
 type Backprop struct {
+	Input  []*BNode
+	Hidden []*BNode
+	Output []*BNode
+
 	lhRate float64 // learning rate of the hidden layer
 	loRate float64 // learning rate of the output layer
-
-	input  []*BNode
-	hidden []*BNode
-	output []*BNode
-
+	
 	netInput   []float64
 	desiredOut []float64
 }
@@ -50,34 +53,34 @@ func NewBackprop(inCount, hideCount, outCount int) *Backprop {
 	n := &Backprop{
 		lhRate: 0.15,
 		loRate: 0.2,
-		input:  make([]*BNode, inCount, inCount),
-		hidden: make([]*BNode, hideCount, hideCount),
-		output: make([]*BNode, outCount, outCount),
+		Input:  make([]*BNode, inCount, inCount),
+		Hidden: make([]*BNode, hideCount, hideCount),
+		Output: make([]*BNode, outCount, outCount),
 	}
 	rand.Seed(time.Now().Unix())
 	for i := 0; i < inCount; i++ {
-		n.input[i] = NewBNode(hideCount)
+		n.Input[i] = NewBNode(hideCount)
 		for j := 0; j < hideCount; j++ {
-			n.input[i].weights[j] = rand.Float64() - 0.49999
+			n.Input[i].Weights[j] = rand.Float64() - 0.49999
 		}
 	}
 
 	for i := 0; i < hideCount; i++ {
-		n.hidden[i] = NewBNode(outCount)
+		n.Hidden[i] = NewBNode(outCount)
 		for j := 0; j < outCount; j++ {
-			n.hidden[i].weights[j] = rand.Float64()
+			n.Hidden[i].Weights[j] = rand.Float64()
 		}
 	}
 	for i := 0; i < outCount; i++ {
-		n.output[i] = NewBNode(0)
+		n.Output[i] = NewBNode(0)
 	}
 
 	// reset thresholds
-	for i := 0; i < len(n.hidden); i++ {
-		n.hidden[i].thr = rand.Float64()
+	for i := 0; i < len(n.Hidden); i++ {
+		n.Hidden[i].Thr = rand.Float64()
 	}
-	for i := 0; i < len(n.output); i++ {
-		n.output[i].thr = rand.Float64()
+	for i := 0; i < len(n.Output); i++ {
+		n.Output[i].Thr = rand.Float64()
 	}
 
 	return n
@@ -91,8 +94,8 @@ type TrainingData struct {
 
 // Train performs network training for number of iterations, usually over 2000 iterations.
 func (n *Backprop) Train(iterations int, data []*TrainingData) {
-	inputLen := len(n.input)
-	outputLen := len(n.output)
+	inputLen := len(n.Input)
+	outputLen := len(n.Output)
 
 	for i := 0; i < iterations; i++ {
 		for _, tr := range data {
@@ -120,72 +123,78 @@ func (n *Backprop) TrainOnePattern() {
 	n.calcNewWeightsInput()
 }
 
+// SetLearningRate sets learning rate for the backpropagation.
+func (n *Backprop) SetLearningRates(lhRate, loRate float64) {
+	n.lhRate = lhRate
+	n.loRate = loRate
+}
+
 func (n *Backprop) calcActivation() {
 	// a loop to set the activations of the hidden layer
-	for h := 0; h < len(n.hidden); h++ {
-		for i := 0; i < len(n.input); i++ {
-			n.hidden[h].activ += n.netInput[i] * n.input[i].weights[h]
+	for h := 0; h < len(n.Hidden); h++ {
+		for i := 0; i < len(n.Input); i++ {
+			n.Hidden[h].activ += n.netInput[i] * n.Input[i].Weights[h]
 		}
 	}
 
 	// calculate the output of the hidden
-	for h := 0; h < len(n.hidden); h++ {
-		n.hidden[h].activ += n.hidden[h].thr
-		n.hidden[h].activ = sigmoid(n.hidden[h].activ)
+	for h := 0; h < len(n.Hidden); h++ {
+		n.Hidden[h].activ += n.Hidden[h].Thr
+		n.Hidden[h].activ = sigmoid(n.Hidden[h].activ)
 	}
 
 	// a loop to set the activations of the output layer
-	for o := 0; o < len(n.output); o++ {
-		for h := 0; h < len(n.hidden); h++ {
-			n.output[o].activ += n.hidden[h].activ * n.hidden[h].weights[o]
+	for o := 0; o < len(n.Output); o++ {
+		for h := 0; h < len(n.Hidden); h++ {
+			n.Output[o].activ += n.Hidden[h].activ * n.Hidden[h].Weights[o]
 		}
 	}
 
 	// calculate the output of the output layer
-	for o := 0; o < len(n.output); o++ {
-		n.output[o].activ += n.output[o].thr
-		n.output[o].activ = sigmoid(n.output[o].activ)
+	for o := 0; o < len(n.Output); o++ {
+		n.Output[o].activ += n.Output[o].Thr
+		n.Output[o].activ = sigmoid(n.Output[o].activ)
 	}
 
 }
 
 // calcErrorOutput calculates error of each output neuron.
 func (n *Backprop) calcErrorOutput() {
-	for o := 0; o < len(n.output); o++ {
-		n.output[o].error = n.output[o].activ * (1 - n.output[o].activ) *
-			(n.desiredOut[o] - n.output[o].activ)
+	for o := 0; o < len(n.Output); o++ {
+		n.Output[o].error = n.Output[o].activ * (1 - n.Output[o].activ) *
+			(n.desiredOut[o] - n.Output[o].activ)
 	}
 }
 
 // calcErrorHidden calculate error of each hidden neuron.
 func (n *Backprop) calcErrorHidden() {
-	for h := 0; h < len(n.hidden); h++ {
-		for o := 0; o < len(n.output); o++ {
-			n.hidden[h].error += n.hidden[h].weights[o] * n.output[o].error
+	for h := 0; h < len(n.Hidden); h++ {
+		for o := 0; o < len(n.Output); o++ {
+			n.Hidden[h].error += n.Hidden[h].Weights[o] * n.Output[o].error
 		}
-		n.hidden[h].error *= n.hidden[h].activ * (1 - n.hidden[h].activ)
+		n.Hidden[h].error *= n.Hidden[h].activ * (1 - n.Hidden[h].activ)
 	}
 }
 
 // calcNewThresholds calculate new thresholds for each neuron.
 func (n *Backprop) calcNewThresholds() {
 	// computing the thresholds for next iteration for hidden layer
-	for h := 0; h < len(n.hidden); h++ {
-		n.hidden[h].thr += n.hidden[h].error * n.lhRate
+	for h := 0; h < len(n.Hidden); h++ {
+		n.Hidden[h].Thr += n.Hidden[h].error * n.lhRate
 	}
 	// computing the thresholds for next iteration for output layer
-	for o := 0; o < len(n.output); o++ {
-		n.output[o].thr += n.output[o].error * n.loRate
+	for o := 0; o < len(n.Output); o++ {
+		n.Output[o].Thr += n.Output[o].error * n.loRate
 	}
 
 }
 
 // calcNewWeightsHidden calculate new weights between hidden and output.
 func (n *Backprop) calcNewWeightsHidden() {
-	for h := 0; h < len(n.hidden); h++ {
-		temp := n.hidden[h].activ * n.loRate
-		for o := 0; o < len(n.output); o++ {
-			n.hidden[h].weights[o] += temp * n.output[o].error
+	for h := 0; h < len(n.Hidden); h++ {
+		temp := n.Hidden[h].activ * n.loRate
+		for o := 0; o < len(n.Output); o++ {
+			n.Hidden[h].Weights[o] += temp * n.Output[o].error
 		}
 	}
 }
@@ -194,8 +203,8 @@ func (n *Backprop) calcNewWeightsHidden() {
 func (n *Backprop) calcNewWeightsInput() {
 	for i := 0; i < len(n.netInput); i++ {
 		temp := n.netInput[i] * n.lhRate
-		for h := 0; h < len(n.hidden); h++ {
-			n.input[i].weights[h] += temp * n.hidden[h].error
+		for h := 0; h < len(n.Hidden); h++ {
+			n.Input[i].Weights[h] += temp * n.Hidden[h].error
 		}
 	}
 }
@@ -203,8 +212,8 @@ func (n *Backprop) calcNewWeightsInput() {
 // calcTotalErrorPattern.
 func (n *Backprop) calcTotalError() float64 {
 	temp := 0.0
-	for o := 0; o < len(n.output); o++ {
-		temp += n.output[o].error
+	for o := 0; o < len(n.Output); o++ {
+		temp += n.Output[o].error
 	}
 	return temp
 }
@@ -213,8 +222,8 @@ func (n *Backprop) calcTotalError() float64 {
 func (n *Backprop) Predict(input []float64) []float64 {
 	n.netInput = input
 	n.calcActivation()
-	out := make([]float64, len(n.output), len(n.output))
-	for i, node := range n.output {
+	out := make([]float64, len(n.Output), len(n.Output))
+	for i, node := range n.Output {
 		out[i] = node.activ
 	}
 	return out
@@ -224,8 +233,8 @@ func (n *Backprop) Predict(input []float64) []float64 {
 func (n *Backprop) PredictInt(input []float64) []int {
 	n.netInput = input
 	n.calcActivation()
-	out := make([]int, len(n.output), len(n.output))
-	for i, node := range n.output {
+	out := make([]int, len(n.Output), len(n.Output))
+	for i, node := range n.Output {
 		if node.activ > 0.5 {
 			out[i] = 1
 		}
