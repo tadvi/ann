@@ -20,7 +20,7 @@ func sigmoid(x float64) float64 {
 
 // BNode node for backpropagation training based network
 type BNode struct {
-	Thr     float64 // threshold
+	Bias     float64 // Bias weight
 	Weights []float64
 
 	activ   float64 // activation value
@@ -75,12 +75,12 @@ func NewBackprop(inCount, hideCount, outCount int) *Backprop {
 		n.Output[i] = NewBNode(0)
 	}
 
-	// reset thresholds
+	// reset Bias weights
 	for i := 0; i < len(n.Hidden); i++ {
-		n.Hidden[i].Thr = rand.Float64()
+		n.Hidden[i].Bias = rand.Float64()
 	}
 	for i := 0; i < len(n.Output); i++ {
-		n.Output[i].Thr = rand.Float64()
+		n.Output[i].Bias = rand.Float64()
 	}
 
 	return n
@@ -118,7 +118,7 @@ func (n *Backprop) TrainOnePattern() {
 	n.calcActivation()
 	n.calcErrorOutput()
 	n.calcErrorHidden()
-	n.calcNewThresholds()
+	n.calcNewBiasWeight()
 	n.calcNewWeightsHidden()
 	n.calcNewWeightsInput()
 }
@@ -139,7 +139,7 @@ func (n *Backprop) calcActivation() {
 
 	// calculate the output of the hidden
 	for h := 0; h < len(n.Hidden); h++ {
-		n.Hidden[h].activ += n.Hidden[h].Thr
+		n.Hidden[h].activ += n.Hidden[h].Bias
 		n.Hidden[h].activ = sigmoid(n.Hidden[h].activ)
 	}
 
@@ -152,7 +152,7 @@ func (n *Backprop) calcActivation() {
 
 	// calculate the output of the output layer
 	for o := 0; o < len(n.Output); o++ {
-		n.Output[o].activ += n.Output[o].Thr
+		n.Output[o].activ += n.Output[o].Bias
 		n.Output[o].activ = sigmoid(n.Output[o].activ)
 	}
 
@@ -176,15 +176,15 @@ func (n *Backprop) calcErrorHidden() {
 	}
 }
 
-// calcNewThresholds calculate new thresholds for each neuron.
-func (n *Backprop) calcNewThresholds() {
-	// computing the thresholds for next iteration for hidden layer
+// calcNewBiasWeight calculate new Bias weight for each neuron.
+func (n *Backprop) calcNewBiasWeight() {
+	// computing the Bias weigth for next iteration for hidden layer
 	for h := 0; h < len(n.Hidden); h++ {
-		n.Hidden[h].Thr += n.Hidden[h].error * n.lhRate
+		n.Hidden[h].Bias += n.Hidden[h].error * n.lhRate
 	}
-	// computing the thresholds for next iteration for output layer
+	// computing the Bias weight for next iteration for output layer
 	for o := 0; o < len(n.Output); o++ {
-		n.Output[o].Thr += n.Output[o].error * n.loRate
+		n.Output[o].Bias += n.Output[o].error * n.loRate
 	}
 
 }
